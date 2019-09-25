@@ -1,10 +1,13 @@
 #!/usr/bin/python
 # encoding: utf-8
+import grp
 import os
 import platform
 import subprocess
+import sys
 import time
 from distutils.version import LooseVersion
+from SystemConfiguration import SCDynamicStoreCopyConsoleUser
 
 
 def get_os_version():
@@ -26,7 +29,7 @@ def trigger_nag():
         # This is really not supported by Apple, but I discovered it
         # Tested on 10.10.5
         # /usr/libexec/mdmclient cloudconfig
-        cmd = ['/usr/libexec/mdmclient', 'cloudconfig']
+        cmd = ['sudo', '-u', username, '/usr/libexec/mdmclient', 'cloudconfig']
     if os_version >= LooseVersion('10.11'):
         run = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         output, err = run.communicate()
@@ -38,10 +41,17 @@ def trigger_nag():
         run = subprocess.Popen(cmd, preexec_fn=os.setpgrp)
         return True
 
-
 def main():
     '''main'''
     dot_path = '/private/var/tmp/umad/.trigger_nag'
+    username = (SCDynamicStoreCopyConsoleUser(None, None, None) or [None])[0]
+    username = [username,''][username in [u'loginwindow', None, u'']]
+    admingroup = grp.getgrnam('admin')
+    stduser = False
+    if username not in admingroup.gr_mem:
+        stduser = True
+        run_pre = subprocess.Popen(['/usr/sbin/dseditgroup', '-o', 'edit', '-a', username, 'admin'])
+        print 'Promoted standard user: ', username
     if trigger_nag():
         print 'Triggered nag - True'
     else:
@@ -61,6 +71,9 @@ def main():
                 print 'Triggered nag backup - False'
         else:
             print 'Triggered nag - False'
+    if stduser:
+        run_post = subprocess.Popen(['/usr/sbin/dseditgroup', '-o', 'edit', '-d', username, 'admin'])
+        print 'Demoted standard user: ', username
 
     # Stop this from happening all the time
     if os.path.exists(dot_path):

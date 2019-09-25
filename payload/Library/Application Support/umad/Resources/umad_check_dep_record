@@ -1,11 +1,14 @@
 #!/usr/bin/python
+import grp
 import os
 import platform
 import plistlib
 import subprocess
+import sys
 import time
 from distutils.version import LooseVersion
 from shutil import copyfile
+from SystemConfiguration import SCDynamicStoreCopyConsoleUser
 
 
 def get_os_version():
@@ -91,10 +94,21 @@ def main():
     dot_path = '/private/var/tmp/umad/.check_dep_record'
     main_umad_path = '/Library/Application Support/umad'
     plist_path = os.path.join(main_umad_path, 'Resources/dep_record.plist')
+    username = (SCDynamicStoreCopyConsoleUser(None, None, None) or [None])[0]
+    username = [username,''][username in [u'loginwindow', None, u'']]
+    admingroup = grp.getgrnam('admin')
+    stduser = False
+    if username not in admingroup.gr_mem:
+        stduser = True
+        run_pre = subprocess.Popen(['/usr/sbin/dseditgroup', '-o', 'edit', '-a', username, 'admin'])
+        print 'Promoted standard user: ', username
     if has_dep_activation_record(plist_path):
         print 'Has DEP activation record - True'
     else:
         print 'Has DEP activation record - False'
+    if stduser:
+        run_post = subprocess.Popen(['/usr/sbin/dseditgroup', '-o', 'edit', '-d', username, 'admin'])
+        print 'Demoted standard user: ', username
 
     # Stop this from happening all the time
     if os.path.exists(dot_path):
